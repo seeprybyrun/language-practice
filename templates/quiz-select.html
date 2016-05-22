@@ -1,0 +1,24 @@
+<form method="post">
+	Quel quiz voulez-vous faire? <br>
+
+	<label>
+		<input type="radio" name="quiz-type" value="verb-definitions" checked="checked">
+		Définitions des verbes<br>
+	</label>
+
+	<label>
+		<input type="radio" name="quiz-type" value="conjugation-indicative-present">
+		Conjugasion à l'indicatif présent <br>
+	</label>
+
+	Combien de questions?
+	<select name="num-questions">
+	    <option value="5" selected="selected">5</option>
+	    <option value="10">10</option>
+	    <option value="20">20</option>
+	    <option value="30">30</option>
+	</select>
+	<br>
+
+	<input type="submit" value="Commencer le quiz">
+</form>
