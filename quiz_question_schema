@@ -1,0 +1,12 @@
+Schema for QuizQuestionType:
+	key
+	string: type_name
+	string: directions
+	string: input_fields
+	string: correct_answer
+
+Schema for QuizQuestion:
+	key
+	string: question_specific_parameters
+	string: correct_answer
+
