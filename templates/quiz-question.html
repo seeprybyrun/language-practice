@@ -1,0 +1,14 @@
+<form method="post">
+    {{prompt}}: <input name="student-answer" id="studentAnswer" autocomplete="off"> <br>
+
+    <input type="hidden" name="go-to-next-question" value="no">
+
+    <input type="submit" value="Vérifier"> <br>
+
+    <script type="text/javascript">
+        window.onload = function() {
+          var input = document.getElementById('studentAnswer');
+          input.focus();
+        }
+    </script>
+</form>
