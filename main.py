@@ -33,11 +33,13 @@ def choose_random_elements(iterable, num_to_choose):
     return permuted_iterable[:num_to_choose]
 
 
+
 # TODO: add user profiles, number attempts per question, number times correct, datetimes of most recent attempts
 
-class DefinitionQuestion(ndb.Model):
-    french_gloss = ndb.StringProperty(required=True)
-    english_gloss = ndb.StringProperty(required=True)
+class EToFDefinitionQuestion(ndb.Model):
+    english_glosses = ndb.StringProperty(required=True)
+    french_answers = ndb.StringProperty(required=True)
+    tags = ndb.StringProperty()
 
 
 class ConjugationQuestion(ndb.Model):
@@ -46,8 +48,8 @@ class ConjugationQuestion(ndb.Model):
     tense = ndb.StringProperty(required=True)
     mood = ndb.StringProperty(required=True)
     correct_answer = ndb.StringProperty(required=True)
-    # TODO: add tags (for irregular verbs, er verbs, ir verbs, re verbs, etc.)
-    # TODO: add number attempts, number times correct, datetimes of most recent attempts
+    tags = ndb.StringProperty() #for irregular verbs, -er verbs, -ir verbs, -re verbs, etc.
+
 
 
 class Handler(webapp2.RequestHandler):
@@ -81,11 +83,17 @@ class QuizSelect(Handler):
         num_quiz_questions = int(self.request.get('num-questions'))
         prompt = ''
 
-        if quiz_type == "verb-definitions":
-            all_question_keys = memcache.get('definition_question_keys')
+        if quiz_type == "e2f-verb-definitions":
+            all_question_keys = memcache.get('e2f_verb_definition_question_keys')
             if not all_question_keys:
-                all_question_keys = DefinitionQuestion.query().fetch(keys_only=True)
-                memcache.set('definition_question_keys', all_question_keys)
+                all_question_keys = EToFDefinitionQuestion.query().fetch(keys_only=True) # TODO: filter on type of definition
+                memcache.set('e2f_verb_definition_question_keys', all_question_keys)
+
+        if quiz_type == "e2f-all-definitions":
+            all_question_keys = memcache.get('e2f_definition_question_keys')
+            if not all_question_keys:
+                all_question_keys = EToFDefinitionQuestion.query().fetch(keys_only=True)
+                memcache.set('e2f_definition_question_keys', all_question_keys)
 
         elif quiz_type == "conjugation-indicative-present":
             all_question_keys = memcache.get('conjugation_question_keys')
@@ -105,32 +113,39 @@ class QuizSelect(Handler):
 
 class QuizQuestion(Handler):
     def get(self):
-        this_question_number = this_quiz['question_number']
-        question_key = this_quiz['question_keys'][this_question_number]
 
-        this_question = memcache.get(question_key.urlsafe())
-        if not this_question:
-            this_question = question_key.get()
-            memcache.set(question_key.urlsafe(), this_question)
+        try:
+            this_question_number = this_quiz['question_number']
+            question_key = this_quiz['question_keys'][this_question_number]
 
-        kwd = dict()
+            this_question = memcache.get(question_key.urlsafe())
+            if not this_question:
+                this_question = question_key.get()
+                memcache.set(question_key.urlsafe(), this_question)
 
-        if this_quiz['quiz_type'] == 'verb-definitions':
-            kwd = {'english_gloss': this_question.english_gloss.encode('utf-8'),
-                   'correct_answer': this_question.french_gloss.encode('utf-8')}
-            prompt = "{english_gloss}".format(**kwd)
+            kwd = dict()
 
-        elif this_quiz['quiz_type'] == 'conjugation-indicative-present':
-            kwd = {'pronoun': this_question.pronoun.encode('utf-8'),
-                   'verb_infinitive': this_question.verb_infinitive.encode('utf-8'),
-                   'correct_answer': this_question.correct_answer.encode('utf-8')}
-            prompt = "{pronoun} / {verb_infinitive}".format(**kwd)
+            if this_quiz['quiz_type'] in ['e2f-all-definitions']:
 
-        this_quiz['this_question_kwd'] = kwd
-        this_quiz['this_question_prompt'] = prompt
+                    kwd = {'english_glosses': this_question.english_glosses.encode('utf-8'),
+                           'correct_answer': this_question.french_answers.encode('utf-8')}
+                    prompt = "{english_glosses}".format(**kwd)
 
-        self.render('quiz-question.html', prompt=prompt.decode('utf-8'))
+            elif this_quiz['quiz_type'] == 'conjugation-indicative-present':
+                kwd = {'pronoun': this_question.pronoun.encode('utf-8'),
+                       'verb_infinitive': this_question.verb_infinitive.encode('utf-8'),
+                       'correct_answer': this_question.correct_answer.encode('utf-8')}
+                prompt = "{pronoun} / {verb_infinitive}".format(**kwd)
 
+            this_quiz['this_question_kwd'] = kwd
+            this_quiz['this_question_prompt'] = prompt
+
+            self.render('quiz-question.html', prompt=prompt.decode('utf-8'))
+        except Exception as e:
+            print "question_number: {}".format(this_question_number)
+            key = this_quiz['question_keys'][this_question_number]
+            print "key.id(): {}".format(key.id())
+            raise e
 
     def post(self):
         go_to_next_question = (self.request.get('go-to-next-question') == 'yes')
@@ -148,14 +163,18 @@ class QuizQuestion(Handler):
 
             kwd = this_quiz['this_question_kwd']
             student_ans = self.request.get('student-answer')
-            correct_ans = kwd['correct_answer']
+            correct_ans = kwd['correct_answer'].split('|')
 
             feedback = 'Erreur'
-            if student_ans.encode('utf-8') == correct_ans:
+            if student_ans.encode('utf-8') in correct_ans:
                 feedback = 'Une bonne réponse!'
                 this_quiz['num_correct'] += 1
             else:
-                feedback = 'Désolé, la bonne réponse est « {correct_answer} ».'.format(correct_answer=correct_ans)
+                feedback = 'Désolé, l{pl0} bonne{pl1} réponse{pl1} {pl2} « {correct_answer} ».'
+                feedback = feedback.format(pl0="a" if len(correct_ans) == 1 else "es",
+                                           pl1="" if len(correct_ans) == 1 else "s",
+                                           pl2="est" if len(correct_ans) == 1 else "sont",
+                                           correct_answer=', '.join(correct_ans))
 
             self.render('quiz-answer.html', prompt=prompt.decode('utf-8'),
                 filled_in_value=student_ans,
@@ -188,21 +207,21 @@ class AdminPage(Handler):
         response = 'No action performed.'
 
         if task == 'Clear Database':
-            self.clear_definition_questions()
+            self.clear_e2f_definition_questions()
             self.clear_conjugation_questions()
             response = 'Database cleared.'
 
         elif task == 'Populate Database':
-            self.populate_definition_questions()
+            self.populate_e2f_definition_questions()
             self.populate_conjugation_questions()
             response = 'Database populated.'
 
         self.render('admin-page.html', response=response)
 
 
-    def populate_definition_questions(self):
-        f = open('data/definition_questions.csv', 'r')
-        reader = csv.reader(f, delimiter=',', quotechar='"')
+    def populate_e2f_definition_questions(self):
+        f = open('data/e2f_definition_questions.csv', 'r')
+        reader = csv.reader(f, delimiter=';', quotechar='"')
 
         dqs = []
 
@@ -210,12 +229,13 @@ class AdminPage(Handler):
             if not row[0]:
                 continue
 
-            french_gloss, english_gloss = row[0:2]
-            dq = DefinitionQuestion(french_gloss=french_gloss, english_gloss=english_gloss)
+            french_answers, english_glosses = row[0:2]
+            tags = '|'.join(row[2:])
+            dq = EToFDefinitionQuestion(french_answers=french_answers, english_glosses=english_glosses, tags=tags)
             dqs.append(dq)
 
         dq_keys = ndb.put_multi(dqs)
-        memcache.set('definition_question_keys', dq_keys)
+        memcache.set('e2f_definition_question_keys', dq_keys)
 
         f.close()
 
@@ -241,11 +261,11 @@ class AdminPage(Handler):
         f.close()
 
 
-    def clear_definition_questions(self):
-        dq_keys = DefinitionQuestion.query().fetch(keys_only=True)
+    def clear_e2f_definition_questions(self):
+        dq_keys = EToFDefinitionQuestion.query().fetch(keys_only=True)
         if dq_keys:
             ndb.delete_multi(dq_keys)
-        memcache.set('definition_question_keys', None)
+        memcache.set('e2f_definition_question_keys', None)
 
 
     def clear_conjugation_questions(self):
